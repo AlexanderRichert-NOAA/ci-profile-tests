@@ -128,6 +128,7 @@ runs:
       if: inputs.profiling_tool == 'vtune' && (inputs.cache_tools != 'true' || steps.cache-vtune.outputs.cache-hit != 'true')
       shell: bash
       run: |
+        sudo echo -n 0 > /proc/sys/kernel/yama/ptrace_scope
         wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
           | sudo gpg --dearmor \
           -o /usr/share/keyrings/oneapi-archive-keyring.gpg
