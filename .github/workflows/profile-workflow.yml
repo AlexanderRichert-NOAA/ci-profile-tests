@@ -1,0 +1,133 @@
+# =============================================================================
+# .github/workflows/profile-workflow.yml
+#
+# Reusable GitHub Workflow: CI Multi-Profiler
+#
+# Intended to be called from a caller workflow in another repository via:
+#
+#   jobs:
+#     profile:
+#       uses: <org>/ci-multiprofiler/.github/workflows/profile-workflow.yml@main
+#       with:
+#         profiling_tool: gprof
+#         test_regex: '^MyTestSuite'
+#         cmake_args: '-DSOME_FLAG=ON'
+#
+# Inputs:
+#   profiling_tool  — vtune | gprof | hpctoolkit  (default: gprof)
+#   test_regex      — CTest -R filter             (default: run all tests)
+#   label_regex     — CTest --label-regex filter  (default: unset)
+#   label_exclude   — CTest --label-exclude filter (default: unset)
+#   cmake_args      — Extra -D flags for cmake configure
+# =============================================================================
+name: 'CI Multi-Profiler'
+
+on:
+  workflow_call:
+    inputs:
+      profiling_tool:
+        description: 'Profiling back-end: vtune | gprof | hpctoolkit'
+        type: string
+        required: false
+        default: 'gprof'
+
+      test_regex:
+        description: >
+          CTest -R regular expression to select a subset of tests.
+          Leave empty to run every test defined in the project.
+        type: string
+        required: false
+        default: ''
+
+      label_regex:
+        description: >
+          CTest --label-regex filter.  Only tests whose labels match are run.
+          Leave empty to skip this filter.
+        type: string
+        required: false
+        default: ''
+
+      label_exclude:
+        description: >
+          CTest --label-exclude filter.  Tests whose labels match are skipped.
+          Leave empty to skip this filter.
+        type: string
+        required: false
+        default: ''
+
+      cmake_args:
+        description: >
+          Additional CMake -D arguments forwarded verbatim to cmake configure,
+          e.g. "-DSOME_FEATURE=ON -DOTHER=42".
+        type: string
+        required: false
+        default: ''
+
+      runner:
+        description: 'GitHub-hosted or self-hosted runner label.'
+        type: string
+        required: false
+        default: 'ubuntu-latest'
+
+      artifact_retention_days:
+        description: 'How many days to keep uploaded profiling artifacts.'
+        type: number
+        required: false
+        default: 14
+
+      cache_tools:
+        description: >
+          Set to "true" to cache profiler installations with actions/cache so
+          that subsequent workflow runs skip the download/install step.
+        type: string
+        required: false
+        default: 'false'
+
+      hpctoolkit_version:
+        description: >
+          HPCToolkit release version to download (e.g. 2024.01.1).
+          Used as the cache key when cache_tools is "true".
+        type: string
+        required: false
+        default: '2024.01.1'
+
+      vtune_version:
+        description: >
+          Intel oneAPI VTune version string used as the cache key
+          (e.g. 2024.2).  Only needed when cache_tools is "true".
+        type: string
+        required: false
+        default: '2024.2'
+
+# ---------------------------------------------------------------------------
+# Jobs
+# ---------------------------------------------------------------------------
+jobs:
+  profile:
+    name: 'Profile (${{ inputs.profiling_tool }})'
+    runs-on: ${{ inputs.runner }}
+
+    # Prevent concurrent profiling runs on the same branch from interfering
+    # with each other's artifact uploads.
+    concurrency:
+      group: profiling-${{ github.ref }}-${{ inputs.profiling_tool }}
+      cancel-in-progress: false   # do NOT cancel; let each run finish
+
+    steps:
+      # The composite action handles checkout, tool install, build, test,
+      # and artifact upload in a single reusable unit.
+      - name: Run profiling action
+        uses: ./
+        with:
+          profiling_tool:           ${{ inputs.profiling_tool }}
+          checkout:                 'true'
+          source_dir:               '.'
+          build_dir:                'build'
+          cmake_args:               ${{ inputs.cmake_args }}
+          test_regex:               ${{ inputs.test_regex }}
+          label_regex:              ${{ inputs.label_regex }}
+          label_exclude:            ${{ inputs.label_exclude }}
+          artifact_retention_days:  ${{ inputs.artifact_retention_days }}
+          cache_tools:              ${{ inputs.cache_tools }}
+          hpctoolkit_version:       ${{ inputs.hpctoolkit_version }}
+          vtune_version:            ${{ inputs.vtune_version }}

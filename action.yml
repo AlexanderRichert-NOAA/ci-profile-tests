@@ -1,0 +1,222 @@
+# =============================================================================
+# action.yml
+#
+# Composite GitHub Action: CI Multi-Profiler
+#
+# Responsibilities:
+#   1. Optionally check out the repository.
+#   2. Install the requested profiling tool if not already present.
+#   3. Configure the project with CMake (RelWithDebInfo + profiling flags).
+#   4. Build.
+#   5. Run CTest with an optional test-name regex filter.
+#   6. Upload the per-test profiling artifacts.
+# =============================================================================
+name: 'CI Multi-Profiler'
+description: >
+  Build with profiling instrumentation, run CTest, and upload artifacts.
+  Supports Intel VTune, gprof, and HPCToolkit.
+
+# ---------------------------------------------------------------------------
+# Inputs
+# ---------------------------------------------------------------------------
+inputs:
+  profiling_tool:
+    description: 'Profiling back-end: vtune | gprof | hpctoolkit'
+    required: false
+    default: 'gprof'
+
+  checkout:
+    description: >
+      Set to "true" to run actions/checkout before building.
+      Set to "false" when the caller has already checked out the code
+      (e.g. running in a container with the source pre-mounted).
+    required: false
+    default: 'true'
+
+  source_dir:
+    description: 'Path to the CMake source root (relative to GITHUB_WORKSPACE).'
+    required: false
+    default: '.'
+
+  build_dir:
+    description: 'Path to the CMake build directory (relative to GITHUB_WORKSPACE).'
+    required: false
+    default: 'build'
+
+  cmake_args:
+    description: 'Extra CMake -D arguments forwarded verbatim to cmake configure.'
+    required: false
+    default: ''
+
+  test_regex:
+    description: 'CTest -R filter.  Leave empty to run every test.'
+    required: false
+    default: ''
+
+  label_regex:
+    description: 'CTest --label-regex filter.  Only tests whose labels match are run.  Leave empty to skip this filter.'
+    required: false
+    default: ''
+
+  label_exclude:
+    description: 'CTest --label-exclude filter.  Tests whose labels match are skipped.  Leave empty to skip this filter.'
+    required: false
+    default: ''
+
+  artifact_retention_days:
+    description: 'How many days to retain the uploaded profiling artifact.'
+    required: false
+    default: '14'
+
+  cache_tools:
+    description: >
+      Set to "true" to cache profiler installations with actions/cache so that
+      subsequent workflow runs skip the download/install step.
+    required: false
+    default: 'false'
+
+  hpctoolkit_version:
+    description: >
+      HPCToolkit release version to download from GitHub Releases
+      (e.g. 2024.01.1).
+    required: false
+    default: '2024.01.1'
+
+  vtune_version:
+    description: >
+      Intel oneAPI VTune version. 
+    required: false
+    default: '2025.10'
+
+# ---------------------------------------------------------------------------
+# Implementation
+# ---------------------------------------------------------------------------
+runs:
+  using: 'composite'
+  steps:
+
+    # ── 1. Optional checkout ──────────────────────────────────────────────
+    - name: Checkout repository
+      if: inputs.checkout == 'true'
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0   # full history helps some profilers map line numbers
+
+    # ── 2a. Install gprof (part of GNU binutils) ──────────────────────────
+    - name: 'Install profiler: gprof'
+      if: inputs.profiling_tool == 'gprof'
+      shell: bash
+      run: |
+        if command -v gprof &>/dev/null; then
+          echo "[profiler] gprof already present at $(command -v gprof) — skipping install."
+        else
+          echo "[profiler] gprof not found; installing binutils..."
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends binutils
+        fi
+
+    # ── 2b-i. Restore VTune from cache ───────────────────────────────────
+    - name: 'Restore cache: Intel VTune'
+      id: cache-vtune
+      if: inputs.profiling_tool == 'vtune' && inputs.cache_tools == 'true'
+      uses: actions/cache@v4
+      with:
+        path: /opt/intel/oneapi/vtune
+        key: vtune-${{ inputs.vtune_version }}
+
+    # ── 2b. Install Intel VTune Profiler via oneAPI apt repository ────────
+    - name: 'Install profiler: Intel VTune'
+      if: inputs.profiling_tool == 'vtune' && (inputs.cache_tools != 'true' || steps.cache-vtune.outputs.cache-hit != 'true')
+      shell: bash
+      run: |
+        wget -qO- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+          | sudo gpg --dearmor \
+          -o /usr/share/keyrings/oneapi-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] \
+          https://apt.repos.intel.com/oneapi all main" \
+          | sudo tee /etc/apt/sources.list.d/oneAPI.list
+        sudo apt-get update -qq
+        if [ ! -z ${{ inputs.vtune_version }} ]; then vtune_version="-${{ inputs.vtune_version }}"; fi
+        sudo apt-get install -y intel-oneapi-vtune$vtune_version
+
+    # ── 2b-iii. Configure VTune environment (always, even on cache hit) ───
+    - name: 'Configure VTune environment'
+      if: inputs.profiling_tool == 'vtune'
+      shell: bash
+      run: |
+        echo "/opt/intel/oneapi/vtune/latest/bin64" >> "$GITHUB_PATH"
+        echo "VTUNE_PROFILER_DIR=/opt/intel/oneapi/vtune/latest" >> "$GITHUB_ENV"
+
+    # ── 2c-i. Restore HPCToolkit from cache ──────────────────────────────
+    - name: 'Restore cache: HPCToolkit'
+      id: cache-hpctoolkit
+      if: inputs.profiling_tool == 'hpctoolkit' && inputs.cache_tools == 'true'
+      uses: actions/cache@v4
+      with:
+        path: /opt/hpctoolkit
+        key: hpctoolkit-${{ inputs.hpctoolkit_version }}-linux-x86_64
+
+    # ── 2c. Install HPCToolkit via precompiled release binary ─────────────
+    - name: 'Install profiler: HPCToolkit'
+      if: inputs.profiling_tool == 'hpctoolkit' && (inputs.cache_tools != 'true' || steps.cache-hpctoolkit.outputs.cache-hit != 'true')
+      shell: bash
+      run: |
+        HPCT_VERSION="${{ inputs.hpctoolkit_version }}"
+        wget -q "https://github.com/HPCToolkit/hpctoolkit/releases/download/v${HPCT_VERSION}/hpctoolkit-${HPCT_VERSION}-x86_64.tar.gz"
+        sudo mkdir -p /opt/hpctoolkit
+        sudo tar -xzf "hpctoolkit-${HPCT_VERSION}-x86_64.tar.gz" \
+          -C /opt/hpctoolkit --strip-components=1
+
+    # ── 2c-iii. Configure HPCToolkit environment (always, even on cache hit)
+    - name: 'Configure HPCToolkit environment'
+      if: inputs.profiling_tool == 'hpctoolkit'
+      shell: bash
+      run: |
+        echo "/opt/hpctoolkit/bin" >> "$GITHUB_PATH"
+
+    # ── 3. CMake configure ────────────────────────────────────────────────
+    - name: Configure CMake
+      shell: bash
+      run: |
+        cmake \
+          -S "${{ inputs.source_dir }}" \
+          -B "${{ inputs.build_dir }}" \
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+          -DENABLE_PROFILING=ON \
+          -DPROFILING_TOOL="${{ inputs.profiling_tool }}" \
+          ${{ inputs.cmake_args }}
+
+    # ── 4. Build ──────────────────────────────────────────────────────────
+    - name: Build
+      shell: bash
+      run: |
+        cmake --build "${{ inputs.build_dir }}" --parallel
+
+    # ── 5. Run CTest ──────────────────────────────────────────────────────
+    - name: Run CTest
+      shell: bash
+      run: |
+        CTEST_OPTS=()
+        if [ -n "${{ inputs.test_regex }}" ]; then
+          CTEST_OPTS+=(-R "${{ inputs.test_regex }}")
+        fi
+        if [ -n "${{ inputs.label_regex }}" ]; then
+          CTEST_OPTS+=(--label-regex "${{ inputs.label_regex }}")
+        fi
+        if [ -n "${{ inputs.label_exclude }}" ]; then
+          CTEST_OPTS+=(--label-exclude "${{ inputs.label_exclude }}")
+        fi
+        ctest \
+          --test-dir "${{ inputs.build_dir }}" \
+          --output-on-failure \
+          "${CTEST_OPTS[@]}"
+
+    # ── 6. Upload artifacts ───────────────────────────────────────────────
+    - name: Upload profiling artifacts
+      if: always()   # upload even if tests fail so partial data is preserved
+      uses: actions/upload-artifact@v4
+      with:
+        name: profiling-results-${{ inputs.profiling_tool }}-${{ github.run_id }}
+        path: ${{ inputs.build_dir }}/profiling-results/
+        retention-days: ${{ inputs.artifact_retention_days }}
+        if-no-files-found: warn

@@ -1,0 +1,73 @@
+# =============================================================================
+# .github/workflows/ci.yml
+#
+# CI workflow for the ci-multiprofiler repository itself.
+#
+# Builds and profiles the dummy application in test/ to verify that the
+# profiling framework (Profiling.cmake + action.yml) works end-to-end
+# for every supported back-end.
+# =============================================================================
+name: 'CI'
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: 'Integration test (${{ matrix.profiling_tool }})'
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        profiling_tool: [gprof, vtune, hpctoolkit]
+
+    steps:
+      - name: Run profiling action on test app
+        uses: ./
+        with:
+          profiling_tool:          ${{ matrix.profiling_tool }}
+          checkout:                'true'
+          source_dir:              'test'
+          build_dir:               'build'
+          cmake_args:              '-DCI_MODE=ON -DPROFILING_CREATE_ANALYSIS=ON'
+          artifact_retention_days: '3'
+
+      - name: Validate analysis reports
+        shell: bash
+        run: |
+          RESULTS_DIR="build/profiling-results"
+          TOOL="${{ matrix.profiling_tool }}"
+
+          if [[ "$TOOL" == "gprof" ]]; then
+            echo "Checking for gprof analysis reports (*.gprof_output.txt)..."
+            mapfile -t reports < <(find "$RESULTS_DIR" -name '*.gprof_output.txt')
+            if [[ ${#reports[@]} -eq 0 ]]; then
+              echo "ERROR: no *.gprof_output.txt files found under $RESULTS_DIR"
+              exit 1
+            fi
+            echo "OK: found ${#reports[@]} gprof report(s):"
+            printf '  %s\n' "${reports[@]}"
+
+          elif [[ "$TOOL" == "vtune" ]]; then
+            echo "Checking for VTune hotspot reports (hotspots.txt)..."
+            mapfile -t reports < <(find "$RESULTS_DIR" -name 'hotspots.txt')
+            if [[ ${#reports[@]} -eq 0 ]]; then
+              echo "ERROR: no hotspots.txt files found under $RESULTS_DIR"
+              exit 1
+            fi
+            echo "OK: found ${#reports[@]} VTune hotspot report(s):"
+            printf '  %s\n' "${reports[@]}"
+
+          elif [[ "$TOOL" == "hpctoolkit" ]]; then
+            echo "Checking for HPCToolkit measurement directories..."
+            mapfile -t dirs < <(find "$RESULTS_DIR" -type d -name 'measurements')
+            if [[ ${#dirs[@]} -eq 0 ]]; then
+              echo "ERROR: no measurements/ directories found under $RESULTS_DIR"
+              exit 1
+            fi
+            echo "OK: found ${#dirs[@]} HPCToolkit measurement directory/directories:"
+            printf '  %s\n' "${dirs[@]}"
+          fi
