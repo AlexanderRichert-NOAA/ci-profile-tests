@@ -21,7 +21,7 @@ description: >
 # ---------------------------------------------------------------------------
 inputs:
   profiling_tool:
-    description: 'Profiling back-end: vtune | gprof | hpctoolkit'
+    description: 'Profiling back-end: gprof | hpctoolkit | vtune (self-hosted runners only)'
     required: false
     default: 'gprof'
 
@@ -156,16 +156,20 @@ runs:
         path: /opt/hpctoolkit
         key: hpctoolkit-${{ inputs.hpctoolkit_version }}-linux-x86_64
 
-    # ── 2c. Install HPCToolkit via precompiled release binary ─────────────
+    # ── 2c-ii. Setup Spack ────────────────────────────────────────────────
+    - name: 'Setup Spack'
+      if: inputs.profiling_tool == 'hpctoolkit' && (inputs.cache_tools != 'true' || steps.cache-hpctoolkit.outputs.cache-hit != 'true')
+      uses: spack/setup-spack@v2
+
+    # ── 2c. Install HPCToolkit via Spack ──────────────────────────────────
     - name: 'Install profiler: HPCToolkit'
       if: inputs.profiling_tool == 'hpctoolkit' && (inputs.cache_tools != 'true' || steps.cache-hpctoolkit.outputs.cache-hit != 'true')
       shell: bash
       run: |
-        HPCT_VERSION="${{ inputs.hpctoolkit_version }}"
-        wget -q "https://gitlab.com/hpctoolkit/hpcviewer/-/releases/${HPCT_VERSION}/downloads/hpcviewer-linux.gtk.x86_64.tar.gz"
+        if [ ! -z "${{ inputs.hpctoolkit_version }}" ]; then hpctoolkit_version="@${{ inputs.hpctoolkit_version }}"; fi
+        spack install hpctoolkit${hpctoolkit_version}
         sudo mkdir -p /opt/hpctoolkit
-        sudo tar -xzf "hpcviewer-linux.gtk.x86_64.tar.gz" \
-          -C /opt/hpctoolkit --strip-components=1
+        spack view copy /opt/hpctoolkit hpctoolkit
 
     # ── 2c-iii. Configure HPCToolkit environment (always, even on cache hit)
     - name: 'Configure HPCToolkit environment'
