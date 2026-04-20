@@ -86,7 +86,6 @@ inputs:
     description: >
       Intel oneAPI VTune version. 
     required: false
-    default: '2025.10'
 
 # ---------------------------------------------------------------------------
 # Implementation
