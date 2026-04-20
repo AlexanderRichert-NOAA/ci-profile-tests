@@ -167,7 +167,7 @@ runs:
         if [ ! -z "${{ inputs.hpctoolkit_version }}" ]; then hpctoolkit_version="@${{ inputs.hpctoolkit_version }}"; fi
         spack install hpctoolkit${hpctoolkit_version}
         sudo mkdir -p /opt/hpctoolkit
-        spack view copy /opt/hpctoolkit hpctoolkit
+        spack view copy --ignore-conflicts /opt/hpctoolkit hpctoolkit
 
     # ── 2c-iii. Configure HPCToolkit environment (always, even on cache hit)
     - name: 'Configure HPCToolkit environment'
