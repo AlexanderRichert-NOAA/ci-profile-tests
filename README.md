@@ -1,4 +1,4 @@
-# ci-multiprofiler
+# ci-profile-tests
 
 A **unified profiling framework** for CMake/CTest projects on GitHub Actions and
 local workstations.  It supports three back-ends:
@@ -14,12 +14,18 @@ local workstations.  It supports three back-ends:
 ## Directory layout
 
 ```
-ci-multiprofiler/
+ci-profile-tests/
 ├── action.yml                   # Composite GitHub Action
 ├── cmake/
 │   └── Profiling.cmake          # CMake module — include in your project
+├── test/
+│   ├── CMakeLists.txt           # Self-test project for the framework
+│   ├── compute.c / compute.h
+│   ├── main.c
+│   └── sum.f90
 ├── .github/
 │   └── workflows/
+│       ├── ci.yml               # Framework's own CI self-tests
 │       └── profile-workflow.yml # Reusable GitHub Workflow
 └── README.md
 ```
@@ -34,7 +40,7 @@ Add the following block to your project's top-level `CMakeLists.txt`
 **before** any `add_test()` calls (typically just after `enable_testing()`):
 
 ```cmake
-cmake_minimum_required(VERSION 3.19)   # minimum required by Profiling.cmake
+cmake_minimum_required(VERSION 3.12)   # minimum required by Profiling.cmake
 project(MyProject C CXX Fortran)
 
 enable_testing()
@@ -46,13 +52,13 @@ if(ENABLE_PROFILING)
     include(FetchContent)
 
     FetchContent_Declare(
-        ci_multiprofiler
-        GIT_REPOSITORY https://github.com/<your-org>/ci-multiprofiler.git
+        ci_profile_tests
+        GIT_REPOSITORY https://github.com/AlexanderRichert-NOAA/ci-profile-tests.git
         GIT_TAG        main          # pin to a tag/SHA for reproducibility
     )
-    FetchContent_MakeAvailable(ci_multiprofiler)
+    FetchContent_MakeAvailable(ci_profile_tests)
 
-    include("${ci_multiprofiler_SOURCE_DIR}/cmake/Profiling.cmake")
+    include("${ci_profile_tests_SOURCE_DIR}/cmake/Profiling.cmake")
 endif()
 
 # ── Define your targets and tests as usual ────────────────────────────────
@@ -71,6 +77,7 @@ add_test(NAME solver_large COMMAND my_solver --input large.dat)
 | `ENABLE_PROFILING` | `OFF` | Master switch — wrap all CTest tests |
 | `PROFILING_TOOL` | `gprof` | Back-end: `vtune`, `gprof`, or `hpctoolkit` |
 | `PROFILING_OUTPUT_DIR` | `<build>/profiling-results` | Root output directory |
+| `PROFILING_ANALYSIS` | `OFF` | Post-process raw data into a human-readable report (gprof / VTune hotspots / `hpcstruct` + `hpcprof`) |
 
 ---
 
@@ -92,11 +99,14 @@ cmake --build build-prof --parallel
 ctest --test-dir build-prof --output-on-failure
 
 # 4. Inspect results
-#    Each test produces two files in build-prof/profiling-results/<test_name>/:
+#    Each test produces a raw gmon binary in build-prof/profiling-results/<test_name>/:
 #      gmon.<pid>      ← raw gmon binary (input for gprof)
-#      gmon.<pid>.txt  ← human-readable gprof flat profile + call graph
+#    To also generate human-readable flat profiles and call graphs, add
+#    -DPROFILING_ANALYSIS=ON to the cmake configure step.  That produces:
+#      gmon.<pid>.gprof_output.txt  ← human-readable gprof flat profile + call graph
 ls build-prof/profiling-results/solver_small/
-# gmon.12345      gmon.12345.txt
+# gmon.12345
+# (with -DPROFILING_ANALYSIS=ON: gmon.12345.gprof_output.txt also appears)
 ```
 
 
@@ -137,11 +147,12 @@ cmake -S . -B build-hpct \
       -DCMAKE_BUILD_TYPE=RelWithDebInfo \
       -DENABLE_PROFILING=ON \
       -DPROFILING_TOOL=hpctoolkit
+      -DPROFILING_ANALYSIS=ON
 
 cmake --build build-hpct --parallel
 ctest --test-dir build-hpct --output-on-failure
 
-# Browse the database:
+# Browse the database (only present with -DPROFILING_ANALYSIS=ON):
 hpcviewer build-hpct/profiling-results/solver_small/hpctoolkit-database
 ```
 
@@ -171,7 +182,7 @@ on:
 
 jobs:
   profile:
-    uses: <your-org>/ci-multiprofiler/.github/workflows/profile-workflow.yml@main
+    uses: AlexanderRichert-NOAA/ci-profile-tests/.github/workflows/profile-workflow.yml@<ref>
     with:
       profiling_tool: ${{ github.event.inputs.profiling_tool || 'gprof' }}
       test_regex:     '^solver'           # optional: only run matching tests
@@ -195,7 +206,7 @@ To use the custom action directly:
 jobs:
   profile:
     steps:
-      - uses: <your-org>/ci-multiprofiler@<ref>
+      - uses: AlexanderRichert-NOAA/ci-profile-tests@<ref>
         with:
           profiling_tool: hpctoolkit
           checkout:        'true'
@@ -204,6 +215,11 @@ jobs:
           cmake_args:      '-DMPI=ON'
           test_regex:      'mpi_'
           artifact_retention_days: '30'
+          label_regex:      ''         # optional: only tests with matching labels
+          label_exclude:    ''         # optional: exclude tests with matching labels
+          cache_tools:      'false'    # set to 'true' to cache profiler installs
+          hpctoolkit_version: '2024.01.1'  # HPCToolkit release version (if used)
+          vtune_version:    '2025.10'  # Intel oneAPI VTune version (if used)
 ```
 
 ---
@@ -217,7 +233,7 @@ running tests in parallel, must **never** clobber profiling data.
 |---|---|
 | **gprof** | `GMON_OUT_PREFIX=<outdir>/gmon` — glibc writes `gmon.<pid>` instead of `gmon.out`; the test runs in a private `mktemp` scratch directory. |
 | **vtune** | Each test uses `-result-dir <outdir>/vtune-result`; `-allow-multiple-runs` lets VTune append data across repeated runs without overwriting. |
-| **hpctoolkit** | Each test writes to `<outdir>/measurements/`; structure and database go to `<outdir>/structs/` and `<outdir>/hpctoolkit-database/`. |
+| **hpctoolkit** | Each test writes to `<outdir>/measurements/` via `hpcrun`.  With `PROFILING_ANALYSIS=ON`, a dependent `_hpctoolkit_analysis` test automatically runs `hpcstruct` + `hpcprof`, producing `<outdir>/structs/` and `<outdir>/hpctoolkit-database/`. |
 
 `<outdir>` is always `PROFILING_OUTPUT_DIR/<test_name_as_c_identifier>` so
 tests that share the same binary but differ in arguments each get their own
@@ -248,4 +264,4 @@ directory.
 | GNU binutils (`gprof`) | any recent version |
 | Intel VTune | oneAPI 2021+; `/proc/sys/kernel/yama/ptrace_scope` = 0 |
 | HPCToolkit | 2020+ |
-| GitHub Actions runner | ubuntu-22.04 or newer |
+| GitHub Actions runner (action.yml/profile-workflow.yml) | ubuntu-22.04 or newer |

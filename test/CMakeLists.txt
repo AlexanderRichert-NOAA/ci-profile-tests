@@ -23,12 +23,12 @@ if(CI_MODE)
 else()
     include(FetchContent)
     FetchContent_Declare(
-        ci_multiprofiler
-        GIT_REPOSITORY https://github.com/AlexanderRichert-NOAA/ci-multiprofiler.git
+        ci_profile_tests
+        GIT_REPOSITORY https://github.com/AlexanderRichert-NOAA/ci-profile-tests.git
         GIT_TAG        main
     )
-    FetchContent_MakeAvailable(ci_multiprofiler)
-    include("${ci_multiprofiler_SOURCE_DIR}/cmake/Profiling.cmake")
+    FetchContent_MakeAvailable(ci_profile_tests)
+    include("${ci_profile_tests_SOURCE_DIR}/cmake/Profiling.cmake")
 endif()
 
 # ---------------------------------------------------------------------------
