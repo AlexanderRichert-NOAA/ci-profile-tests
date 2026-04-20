@@ -77,14 +77,12 @@ inputs:
 
   hpctoolkit_version:
     description: >
-      HPCToolkit release version to download from GitHub Releases
-      (e.g. 2024.01.1).
+      HPCToolkit version to install.
     required: false
-    default: '2026.1.0'
 
   vtune_version:
     description: >
-      Intel oneAPI VTune version. 
+      Intel oneAPI VTune version to install. 
     required: false
 
 # ---------------------------------------------------------------------------
