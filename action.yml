@@ -164,7 +164,7 @@ runs:
         HPCT_VERSION="${{ inputs.hpctoolkit_version }}"
         wget -q "https://gitlab.com/hpctoolkit/hpcviewer/-/releases/${HPCT_VERSION}/downloads/hpcviewer-linux.gtk.x86_64.tar.gz"
         sudo mkdir -p /opt/hpctoolkit
-        sudo tar -xzf "hpctoolkit-${HPCT_VERSION}-x86_64.tar.gz" \
+        sudo tar -xzf "hpcviewer-linux.gtk.x86_64.tar.gz" \
           -C /opt/hpctoolkit --strip-components=1
 
     # ── 2c-iii. Configure HPCToolkit environment (always, even on cache hit)
