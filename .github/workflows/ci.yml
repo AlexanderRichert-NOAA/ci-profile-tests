@@ -35,7 +35,7 @@ jobs:
           checkout:                'true'
           source_dir:              'test'
           build_dir:               'build'
-          cmake_args:              '-DCI_MODE=ON -DPROFILING_CREATE_ANALYSIS=ON'
+          cmake_args:              '-DCI_MODE=ON -DPROFILING_ANALYSIS=ON'
           artifact_retention_days: '3'
 
       - name: Validate analysis reports
