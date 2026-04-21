@@ -44,33 +44,33 @@ jobs:
           RESULTS_DIR="build/profiling-results"
           TOOL="${{ matrix.profiling_tool }}"
 
-          if [[ "$TOOL" == "gprof" ]]; then
-            echo "Checking for gprof analysis reports (*.gprof_output.txt)..."
-            mapfile -t reports < <(find "$RESULTS_DIR" -name '*.gprof_output.txt')
-            if [[ ${#reports[@]} -eq 0 ]]; then
-              echo "ERROR: no *.gprof_output.txt files found under $RESULTS_DIR"
+          check() {
+            # check <description> <find-args...>
+            local desc="$1"; shift
+            mapfile -t hits < <(find "$RESULTS_DIR" "$@")
+            if [[ ${#hits[@]} -eq 0 ]]; then
+              echo "ERROR: $desc — none found under $RESULTS_DIR"
               exit 1
             fi
-            echo "OK: found ${#reports[@]} gprof report(s):"
-            printf '  %s\n' "${reports[@]}"
+            echo "OK ($desc): found ${#hits[@]} match(es):"
+            printf '  %s\n' "${hits[@]}"
+          }
+
+          if [[ "$TOOL" == "gprof" ]]; then
+            # <RESULTS_DIR>/<test_name>/gmon.<pid>  — written by glibc via GMON_OUT_PREFIX
+            check "raw gmon.* in per-test dirs"      -maxdepth 2 -name 'gmon.*' -not -type d
+            # <RESULTS_DIR>/<test_name>/gmon.<pid>.gprof_output.txt  — written by run_gprof_analysis.cmake
+            check "gprof reports in per-test dirs"   -maxdepth 2 -name '*.gprof_output.txt'
 
           elif [[ "$TOOL" == "hpctoolkit" ]]; then
-            echo "Checking for HPCToolkit measurement directories..."
-            mapfile -t dirs < <(find "$RESULTS_DIR" -type d -name 'measurements')
-            if [[ ${#dirs[@]} -eq 0 ]]; then
-              echo "ERROR: no measurements/ directories found under $RESULTS_DIR"
-              exit 1
-            fi
-            echo "OK: found ${#dirs[@]} HPCToolkit measurement directory/directories:"
-            printf '  %s\n' "${dirs[@]}"
+            # <RESULTS_DIR>/<test_name>/measurements/<sample>.hpcrun  — written by hpcrun
+            check "hpcrun files in measurements/"    -path '*/measurements/*.hpcrun'
+            # <RESULTS_DIR>/<test_name>/structs/<exe>.hpcstruct  — written by hpcstruct
+            check "hpcstruct files in structs/"      -path '*/structs/*.hpcstruct'
 
           elif [[ "$TOOL" == "scalasca" ]]; then
-            echo "Checking for Scalasca experiment archives (scorep_*)..."
-            mapfile -t archives < <(find "$RESULTS_DIR" -type d -name 'scorep_*')
-            if [[ ${#archives[@]} -eq 0 ]]; then
-              echo "ERROR: no scorep_* directories found under $RESULTS_DIR"
-              exit 1
-            fi
-            echo "OK: found ${#archives[@]} Scalasca experiment archive(s):"
-            printf '  %s\n' "${archives[@]}"
+            # <RESULTS_DIR>/<test_name>/scorep_archive/profile.cubex  — written by Score-P
+            check "profile.cubex in scorep_archive/" -path '*/scorep_archive/profile.cubex'
+            # <RESULTS_DIR>/<test_name>/scalasca_summary.txt  — written by scalasca -examine
+            check "scalasca_summary.txt in per-test dirs" -maxdepth 2 -name 'scalasca_summary.txt'
           fi
