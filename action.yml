@@ -150,6 +150,8 @@ runs:
     - name: 'Setup Spack'
       if: (inputs.profiling_tool == 'hpctoolkit' || inputs.profiling_tool == 'scalasca') && (inputs.cache_tools != 'true' || (steps.cache-hpctoolkit.outputs.cache-hit != 'true' && steps.cache-scalasca.outputs.cache-hit != 'true'))
       uses: spack/setup-spack@eb0523e3b331d170d917083e9df79e1f11b29b0e
+      with:
+        buildcache: false
 
     - name: 'Configure Spack: target and compilers'
       if: (inputs.profiling_tool == 'hpctoolkit' || inputs.profiling_tool == 'scalasca') && (inputs.cache_tools != 'true' || (steps.cache-hpctoolkit.outputs.cache-hit != 'true' && steps.cache-scalasca.outputs.cache-hit != 'true'))
@@ -160,6 +162,7 @@ runs:
         spack config add "packages:c:require:gcc@${gcc_ver}"
         spack config add "packages:cxx:require:gcc@${gcc_ver}"
         spack config add "packages:fortran:require:gcc@${gcc_ver}"
+        spack config add "packages:gcc-runtime:require:'@${gcc_ver}'"
 
     - name: 'Install profiler: HPCToolkit'
       if: inputs.profiling_tool == 'hpctoolkit' && (inputs.cache_tools != 'true' || steps.cache-hpctoolkit.outputs.cache-hit != 'true')
