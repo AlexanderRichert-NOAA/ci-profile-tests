@@ -157,7 +157,7 @@ runs:
       if: (inputs.profiling_tool == 'hpctoolkit' || inputs.profiling_tool == 'scalasca') && (inputs.cache_tools != 'true' || (steps.cache-hpctoolkit.outputs.cache-hit != 'true' && steps.cache-scalasca.outputs.cache-hit != 'true'))
       shell: spack-bash {0}
       run: |
-        spack config add 'packages:all:target:x86_64'
+        spack config add 'packages:all:target:[x86_64]'
         spack filter-compilers "gcc@$(gcc -dumpfullversion)" --keep-only
 
     - name: 'Install profiler: HPCToolkit'
