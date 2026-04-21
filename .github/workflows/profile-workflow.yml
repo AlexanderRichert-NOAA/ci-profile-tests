@@ -26,7 +26,7 @@ on:
   workflow_call:
     inputs:
       profiling_tool:
-        description: 'Profiling back-end: vtune | gprof | hpctoolkit'
+        description: 'Profiling back-end: vtune | gprof | hpctoolkit | scalasca'
         type: string
         required: false
         default: 'gprof'
@@ -99,6 +99,14 @@ on:
         required: false
         default: '2024.2'
 
+      scalasca_version:
+        description: >
+          Scalasca version string passed to Spack (e.g. 2.6).  Leave empty
+          to let Spack choose the latest available version.
+        type: string
+        required: false
+        default: ''
+
 # ---------------------------------------------------------------------------
 # Jobs
 # ---------------------------------------------------------------------------
@@ -131,3 +139,4 @@ jobs:
           cache_tools:              ${{ inputs.cache_tools }}
           hpctoolkit_version:       ${{ inputs.hpctoolkit_version }}
           vtune_version:            ${{ inputs.vtune_version }}
+          scalasca_version:         ${{ inputs.scalasca_version }}

@@ -14,14 +14,14 @@
 name: 'CI Multi-Profiler'
 description: >
   Build with profiling instrumentation, run CTest, and upload artifacts.
-  Supports Intel VTune, gprof, and HPCToolkit.
+  Supports Intel VTune, gprof, HPCToolkit, and Scalasca.
 
 # ---------------------------------------------------------------------------
 # Inputs
 # ---------------------------------------------------------------------------
 inputs:
   profiling_tool:
-    description: 'Profiling back-end: gprof | hpctoolkit | vtune (self-hosted runners only)'
+    description: 'Profiling back-end: gprof | hpctoolkit | scalasca | vtune (self-hosted runners only)'
     required: false
     default: 'gprof'
 
@@ -76,13 +76,15 @@ inputs:
     default: 'false'
 
   hpctoolkit_version:
-    description: >
-      HPCToolkit version to install.
+    description: HPCToolkit version to install.
     required: false
 
   vtune_version:
-    description: >
-      Intel oneAPI VTune version to install. 
+    description: Intel oneAPI VTune version to install. 
+    required: false
+
+  scalasca_version:
+    description: Scalasca version to install via Spack.
     required: false
 
 # ---------------------------------------------------------------------------
@@ -154,9 +156,9 @@ runs:
         path: /opt/hpctoolkit
         key: hpctoolkit-${{ inputs.hpctoolkit_version }}-linux-x86_64
 
-    # ── 2c-ii. Setup Spack ────────────────────────────────────────────────
+    # ── 2c-ii. Setup Spack (hpctoolkit or scalasca) ──────────────────────
     - name: 'Setup Spack'
-      if: inputs.profiling_tool == 'hpctoolkit' && (inputs.cache_tools != 'true' || steps.cache-hpctoolkit.outputs.cache-hit != 'true')
+      if: (inputs.profiling_tool == 'hpctoolkit' || inputs.profiling_tool == 'scalasca') && (inputs.cache_tools != 'true' || (steps.cache-hpctoolkit.outputs.cache-hit != 'true' && steps.cache-scalasca.outputs.cache-hit != 'true'))
       uses: spack/setup-spack@v2
 
     # ── 2c. Install HPCToolkit via Spack ──────────────────────────────────
@@ -175,6 +177,37 @@ runs:
       shell: bash
       run: |
         echo "/opt/hpctoolkit/bin" >> "$GITHUB_PATH"
+
+    # ── 2d-i. Restore Scalasca from cache ─────────────────────────────────
+    - name: 'Restore cache: Scalasca'
+      id: cache-scalasca
+      if: inputs.profiling_tool == 'scalasca' && inputs.cache_tools == 'true'
+      uses: actions/cache@v4
+      with:
+        path: /opt/scalasca
+        key: scalasca-${{ inputs.scalasca_version }}-linux-x86_64
+
+    # ── 2d-ii. Setup Spack for Scalasca ───────────────────────────────────
+    # (Spack is already set up by the shared step above; this step is a no-op
+    #  placeholder kept for structural clarity — the shared step above handles
+    #  both hpctoolkit and scalasca.)
+
+    # ── 2d. Install Scalasca via Spack ────────────────────────────────────
+    - name: 'Install profiler: Scalasca'
+      if: inputs.profiling_tool == 'scalasca' && (inputs.cache_tools != 'true' || steps.cache-scalasca.outputs.cache-hit != 'true')
+      shell: bash
+      run: |
+        if [ ! -z "${{ inputs.scalasca_version }}" ]; then scalasca_version="@${{ inputs.scalasca_version }}"; fi
+        spack install scalasca${scalasca_version} ^scorep ~gcc-plugin
+        sudo mkdir -p /opt/scalasca
+        spack view copy --ignore-conflicts /opt/scalasca scalasca
+
+    # ── 2d-iii. Configure Scalasca environment (always, even on cache hit) ─
+    - name: 'Configure Scalasca environment'
+      if: inputs.profiling_tool == 'scalasca'
+      shell: bash
+      run: |
+        echo "/opt/scalasca/bin" >> "$GITHUB_PATH"
 
     # ── 3. CMake configure ────────────────────────────────────────────────
     - name: Configure CMake

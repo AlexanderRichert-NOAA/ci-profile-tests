@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profiling_tool: [gprof, hpctoolkit]
+        profiling_tool: [gprof, hpctoolkit, scalasca]
 
     steps:
       - name: Checkout
@@ -63,4 +63,14 @@ jobs:
             fi
             echo "OK: found ${#dirs[@]} HPCToolkit measurement directory/directories:"
             printf '  %s\n' "${dirs[@]}"
+
+          elif [[ "$TOOL" == "scalasca" ]]; then
+            echo "Checking for Scalasca experiment archives (scorep_*)..."
+            mapfile -t archives < <(find "$RESULTS_DIR" -type d -name 'scorep_*')
+            if [[ ${#archives[@]} -eq 0 ]]; then
+              echo "ERROR: no scorep_* directories found under $RESULTS_DIR"
+              exit 1
+            fi
+            echo "OK: found ${#archives[@]} Scalasca experiment archive(s):"
+            printf '  %s\n' "${archives[@]}"
           fi

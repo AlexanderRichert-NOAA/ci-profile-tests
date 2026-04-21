@@ -1,13 +1,14 @@
 # ci-profile-tests
 
 A **unified profiling framework** for CMake/CTest projects on GitHub Actions and
-local workstations.  It supports three back-ends:
+local workstations.  It supports four back-ends:
 
 | Back-end | Tool(s) | Method |
 |---|---|---|
 | **gprof** | GNU `gprof` | `-pg` instrumentation; per-test `gmon` files |
 | **vtune** | Intel VTune Profiler | Hardware counters; per-test result directory |
 | **hpctoolkit** | `hpcrun` + `hpcstruct` + `hpcprof` | Sampling; per-test database |
+| **scalasca** | `scalasca` + Score-P | Automatic instrumentation via `RULE_LAUNCH`; per-test experiment archive |
 
 ---
 
@@ -75,9 +76,9 @@ add_test(NAME solver_large COMMAND my_solver --input large.dat)
 | CMake option | Default | Description |
 |---|---|---|
 | `ENABLE_PROFILING` | `OFF` | Master switch — wrap all CTest tests |
-| `PROFILING_TOOL` | `gprof` | Back-end: `vtune`, `gprof`, or `hpctoolkit` |
+| `PROFILING_TOOL` | `gprof` | Back-end: `vtune`, `gprof`, `hpctoolkit`, or `scalasca` |
 | `PROFILING_OUTPUT_DIR` | `<build>/profiling-results` | Root output directory |
-| `PROFILING_ANALYSIS` | `OFF` | Post-process raw data into a human-readable report (gprof / VTune hotspots / `hpcstruct` + `hpcprof`) |
+| `PROFILING_ANALYSIS` | `OFF` | Post-process raw data into a human-readable report (gprof / VTune hotspots / `hpcstruct` + `hpcprof` / `scalasca -examine`) |
 
 ---
 
@@ -143,21 +144,41 @@ vtune-gui build-vtune/profiling-results/solver_small/vtune-result
 ### HPCToolkit
 
 ```bash
-cmake -S . -B build-hpct \
+cmake -S . -B build-hpctoolkit \
       -DCMAKE_BUILD_TYPE=RelWithDebInfo \
       -DENABLE_PROFILING=ON \
       -DPROFILING_TOOL=hpctoolkit
       -DPROFILING_ANALYSIS=ON
 
-cmake --build build-hpct --parallel
-ctest --test-dir build-hpct --output-on-failure
+cmake --build build-hpctoolkit --parallel
+ctest --test-dir build-hpctoolkit --output-on-failure
 
 # Browse the database (only present with -DPROFILING_ANALYSIS=ON):
-hpcviewer build-hpct/profiling-results/solver_small/hpctoolkit-database
+hpcviewer build-hpctoolkit/profiling-results/solver_small/hpctoolkit-database
 ```
 
 HPCToolkit understands Fortran DWARF (`DW_TAG_module`) and displays
 module-qualified procedure names natively in `hpcviewer`.
+
+### Scalasca
+
+```bash
+cmake -S . -B build-scalasca \
+      -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+      -DENABLE_PROFILING=ON \
+      -DPROFILING_TOOL=scalasca
+
+cmake --build build-scalasca --parallel
+ctest --test-dir build-scalasca --output-on-failure
+
+# Per-test experiment archives land in:
+#   build-scalasca/profiling-results/<test_name>/scorep_archive/
+# With -DPROFILING_ANALYSIS=ON, scalasca -examine is run automatically and
+# a human-readable summary is written to:
+#   build-scalasca/profiling-results/<test_name>/scalasca_summary.txt
+# You can also explore interactively:
+scalasca -examine build-scalasca/profiling-results/solver_small/scorep_archive
+```
 
 ---
 
@@ -177,7 +198,7 @@ on:
   workflow_dispatch:
     inputs:
       profiling_tool:
-        description: 'vtune | gprof | hpctoolkit'
+        description: 'vtune | gprof | hpctoolkit | scalasca'
         default: 'gprof'
 
 jobs:
@@ -187,6 +208,14 @@ jobs:
       profiling_tool: ${{ github.event.inputs.profiling_tool || 'gprof' }}
       test_regex:     '^solver'           # optional: only run matching tests
       cmake_args:     '-DSOME_OPTION=ON'  # optional: extra CMake flags
+```
+
+For Scalasca, pass `scalasca_version` if you need a specific release:
+
+```yaml
+    with:
+      profiling_tool:   scalasca
+      scalasca_version: '2.6'   # optional; omit to let Spack choose latest
 ```
 
 The reusable workflow:
@@ -220,6 +249,7 @@ jobs:
           cache_tools:      'false'    # set to 'true' to cache profiler installs
           hpctoolkit_version: '2024.01.1'  # HPCToolkit release version (if used)
           vtune_version:    '2025.10'  # Intel oneAPI VTune version (if used)
+          scalasca_version: '2.6'     # Scalasca version (if used; leave blank for latest)
 ```
 
 ---
@@ -234,6 +264,7 @@ running tests in parallel, must **never** clobber profiling data.
 | **gprof** | `GMON_OUT_PREFIX=<outdir>/gmon` — glibc writes `gmon.<pid>` instead of `gmon.out`; the test runs in a private `mktemp` scratch directory. |
 | **vtune** | Each test uses `-result-dir <outdir>/vtune-result`; `-allow-multiple-runs` lets VTune append data across repeated runs without overwriting. |
 | **hpctoolkit** | Each test writes to `<outdir>/measurements/` via `hpcrun`.  With `PROFILING_ANALYSIS=ON`, a dependent `_hpctoolkit_analysis` test automatically runs `hpcstruct` + `hpcprof`, producing `<outdir>/structs/` and `<outdir>/hpctoolkit-database/`. |
+| **scalasca** | `SCOREP_EXPERIMENT_DIRECTORY=<outdir>/scorep_archive` pins the Score-P experiment archive to a unique per-test path.  With `PROFILING_ANALYSIS=ON`, a dependent `_scalasca_analysis` test runs `scalasca -examine -s` and writes `<outdir>/scalasca_summary.txt`. |
 
 `<outdir>` is always `PROFILING_OUTPUT_DIR/<test_name_as_c_identifier>` so
 tests that share the same binary but differ in arguments each get their own
@@ -243,13 +274,18 @@ directory.
 
 ## Fortran considerations
 
-- `-pg -g` (gprof) and `-g` (VTune/HPCToolkit) are automatically appended to
+- `-pg -g` (gprof) and `-g` (VTune/HPCToolkit/Scalasca) are automatically appended to
   `CMAKE_C_FLAGS`, `CMAKE_CXX_FLAGS`, and `CMAKE_Fortran_FLAGS`.
 - `-rdynamic` is added to `CMAKE_EXE_LINKER_FLAGS` for VTune and HPCToolkit so
   dynamic symbols are resolvable in profiles.
 - For gprof, `-pg` is also added to `CMAKE_EXE_LINKER_FLAGS` and
   `CMAKE_SHARED_LINKER_FLAGS` so the profiling startup code is linked
   independently of which compiler driver is used as the linker.
+- For Scalasca, `RULE_LAUNCH_COMPILE` and `RULE_LAUNCH_LINK` are set to
+  `scalasca -instrument`, which wraps every compile and link command so that
+  Score-P inserts its hooks and links the measurement library.  This works with
+  both the Makefile and Ninja generators and is compatible with mixed-language
+  (C + Fortran) projects.
 - HPCToolkit `hpcstruct` parses DWARF `DW_TAG_module` entries produced by
   gfortran and ifort, so Fortran module/procedure hierarchies are preserved in
   the final `hpcviewer` display.
@@ -264,4 +300,5 @@ directory.
 | GNU binutils (`gprof`) | any recent version |
 | Intel VTune | oneAPI 2021+; `/proc/sys/kernel/yama/ptrace_scope` = 0 |
 | HPCToolkit | 2020+ |
+| Scalasca + Score-P | 2.x |
 | GitHub Actions runner (action.yml/profile-workflow.yml) | ubuntu-22.04 or newer |
