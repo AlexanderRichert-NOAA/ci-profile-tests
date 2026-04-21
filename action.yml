@@ -149,16 +149,17 @@ runs:
 
     - name: 'Setup Spack'
       if: (inputs.profiling_tool == 'hpctoolkit' || inputs.profiling_tool == 'scalasca') && (inputs.cache_tools != 'true' || (steps.cache-hpctoolkit.outputs.cache-hit != 'true' && steps.cache-scalasca.outputs.cache-hit != 'true'))
-      uses: NOAA-EMC/spack-helpers@develop
-      with:
-        install-spack: 'true'
+      uses: spack/setup-spack@eb0523e3b331d170d917083e9df79e1f11b29b0e
 
     - name: 'Configure Spack: target and compilers'
       if: (inputs.profiling_tool == 'hpctoolkit' || inputs.profiling_tool == 'scalasca') && (inputs.cache_tools != 'true' || (steps.cache-hpctoolkit.outputs.cache-hit != 'true' && steps.cache-scalasca.outputs.cache-hit != 'true'))
       shell: spack-bash {0}
       run: |
-        spack config add 'packages:all:target:[x86_64]'
-        spack filter-compilers "gcc@$(gcc -dumpfullversion)" --keep-only
+        spack config add "packages:all:target:[x86_64]"
+        gcc_ver=$(gcc -dumpfullversion)
+        spack config add "packages:c:require:gcc@${gcc_ver}"
+        spack config add "packages:cxx:require:gcc@${gcc_ver}"
+        spack config add "packages:fortran:require:gcc@${gcc_ver}"
 
     - name: 'Install profiler: HPCToolkit'
       if: inputs.profiling_tool == 'hpctoolkit' && (inputs.cache_tools != 'true' || steps.cache-hpctoolkit.outputs.cache-hit != 'true')
