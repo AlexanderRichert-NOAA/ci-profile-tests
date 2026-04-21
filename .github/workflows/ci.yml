@@ -31,11 +31,10 @@ jobs:
       - name: Run profiling action on test app
         uses: ./
         with:
-          profiling_tool:          ${{ matrix.profiling_tool }}
-          checkout:                'true'
-          source_dir:              'test'
-          build_dir:               'build'
-          cmake_args:              '-DCI_MODE=ON -DPROFILING_ANALYSIS=ON'
+          profiling_tool: ${{ matrix.profiling_tool }}
+          source_dir: 'test'
+          build_dir: 'build'
+          cmake_args: '-DCI_MODE=ON -DPROFILING_ANALYSIS=ON'
           artifact_retention_days: '3'
 
       - name: Validate analysis reports
