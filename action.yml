@@ -73,7 +73,7 @@ inputs:
       Set to "true" to cache profiler installations with actions/cache so that
       subsequent workflow runs skip the download/install step.
     required: false
-    default: 'false'
+    default: 'true'
 
   hpctoolkit_version:
     description: HPCToolkit version to install.
