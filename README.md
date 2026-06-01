@@ -1,7 +1,6 @@
 # ci-profile-tests
 
-A **unified profiling framework** for CMake/CTest projects on GitHub Actions and
-local workstations.  It supports four back-ends:
+This repository provides a **unified profiling framework** for CMake+CTest-based projects, including via custom GitHub action.  It supports four backends:
 
 | Back-end | Tool(s) | Method |
 |---|---|---|
@@ -18,7 +17,7 @@ local workstations.  It supports four back-ends:
 ci-profile-tests/
 ├── action.yml                   # Composite GitHub Action
 ├── cmake/
-│   └── Profiling.cmake          # CMake module — include in your project
+│   └── Profiling.cmake          # CMake module - include in your project to be profiled
 ├── test/
 │   ├── CMakeLists.txt           # Self-test project for the framework
 │   ├── compute.c / compute.h
@@ -35,7 +34,7 @@ ci-profile-tests/
 
 ## Integration guide
 
-### 1  Pull `Profiling.cmake` into your project via `FetchContent`
+### 1. Pull `Profiling.cmake` into your project via `FetchContent`
 
 Add the following block to your project's top-level `CMakeLists.txt`
 **before** any `add_test()` calls (typically just after `enable_testing()`):
@@ -46,7 +45,7 @@ project(MyProject C CXX Fortran)
 
 enable_testing()
 
-# ── Pull in the profiling framework only when profiling is requested ───────
+# Pull in the profiling framework only when profiling is requested
 option(ENABLE_PROFILING "Enable profiling wrappers for CTest tests" OFF)
 
 if(ENABLE_PROFILING)
@@ -61,17 +60,11 @@ if(ENABLE_PROFILING)
 
     include("${ci_profile_tests_SOURCE_DIR}/cmake/Profiling.cmake")
 endif()
-
-# ── Define your targets and tests as usual ────────────────────────────────
-add_executable(my_solver solver.c solver_f.f90)
-
-add_test(NAME solver_small COMMAND my_solver --input small.dat)
-add_test(NAME solver_large COMMAND my_solver --input large.dat)
 ```
 
 ---
 
-### 2  CMake options reference
+### 2. CMake options reference
 
 | CMake option | Default | Description |
 |---|---|---|
@@ -113,6 +106,7 @@ ls build-prof/profiling-results/solver_small/
 
 ### Intel VTune
 
+> [!IMPORTANT]
 > **Prerequisite — `ptrace_scope`**
 > VTune's collection agent must attach to the profiled process via `ptrace`.
 > On Linux systems with YAMA LSM this requires `ptrace_scope` to be set to `0`:
@@ -125,8 +119,6 @@ ls build-prof/profiling-results/solver_small/
 > echo 'kernel.yama.ptrace_scope = 0' | \
 >     sudo tee /etc/sysctl.d/10-ptrace.conf
 > ```
->
-> GitHub Actions `ubuntu-*` runners have `ptrace_scope=0` by default.
 
 ```bash
 cmake -S . -B build-vtune \
@@ -184,7 +176,7 @@ scalasca -examine build-scalasca/profiling-results/solver_small/scorep_archive
 
 ## GitHub Actions integration
 
-### A  Use the reusable workflow from a caller workflow
+### Reusable workflow
 
 In your project repository create (or extend)
 `.github/workflows/profile.yml`:
@@ -227,7 +219,7 @@ The reusable workflow:
 6. Uploads all files under `build/profiling-results/` as a GitHub Actions
    artifact named `profiling-results-<tool>-<run_id>`.
 
-### B  Use the composite action directly
+### Custom (composite) action
 
 To use the custom action directly:
 
@@ -252,25 +244,6 @@ jobs:
           scalasca_version: '2.6'     # Scalasca version (if used; leave blank for latest)
 ```
 
----
-
-## How artifact isolation works
-
-A key design goal is that running `make test` or `ctest` multiple times, or
-running tests in parallel, must **never** clobber profiling data.
-
-| Back-end | Isolation mechanism |
-|---|---|
-| **gprof** | `GMON_OUT_PREFIX=<outdir>/gmon` — glibc writes `gmon.<pid>` instead of `gmon.out`; the test runs in a private `mktemp` scratch directory. |
-| **vtune** | Each test uses `-result-dir <outdir>/vtune-result`; `-allow-multiple-runs` lets VTune append data across repeated runs without overwriting. |
-| **hpctoolkit** | Each test writes to `<outdir>/measurements/` via `hpcrun`.  With `PROFILING_ANALYSIS=ON`, a dependent `_hpctoolkit_analysis` test automatically runs `hpcstruct` + `hpcprof`, producing `<outdir>/structs/` and `<outdir>/hpctoolkit-database/`. |
-| **scalasca** | `SCOREP_EXPERIMENT_DIRECTORY=<outdir>/scorep_archive` pins the Score-P experiment archive to a unique per-test path.  With `PROFILING_ANALYSIS=ON`, a dependent `_scalasca_analysis` test runs `scalasca -examine -s` and writes `<outdir>/scalasca_summary.txt`. |
-
-`<outdir>` is always `PROFILING_OUTPUT_DIR/<test_name_as_c_identifier>` so
-tests that share the same binary but differ in arguments each get their own
-directory.
-
----
 
 ## Fortran considerations
 
