@@ -1,6 +1,6 @@
 # ci-profile-tests
 
-A **unified profiling framework** for CMake/CTest projects on GitHub Actions and
+This repository provides a unified profiling framework for CMake/CTest projects on GitHub Actions and
 local workstations.  It supports four back-ends:
 
 | Back-end | Tool(s) | Method |
@@ -18,6 +18,7 @@ local workstations.  It supports four back-ends:
 ci-profile-tests/
 ├── action.yml                   # Composite GitHub Action
 ├── cmake/
+│   ├── gprof_to_cdash.py        # Converts gprof output to CDash measurements
 │   └── Profiling.cmake          # CMake module — include in your project
 ├── test/
 │   ├── CMakeLists.txt           # Self-test project for the framework
@@ -79,6 +80,7 @@ add_test(NAME solver_large COMMAND my_solver --input large.dat)
 | `PROFILING_TOOL` | `gprof` | Back-end: `vtune`, `gprof`, `hpctoolkit`, or `scalasca` |
 | `PROFILING_OUTPUT_DIR` | `<build>/profiling-results` | Root output directory |
 | `PROFILING_ANALYSIS` | `OFF` | Post-process raw data into a human-readable report (gprof / VTune hotspots / `hpcstruct` + `hpcprof` / `scalasca -examine`) |
+| `ENABLE_CDASH` | `OFF` | Generate custom measurements for CDash. Requires `PROFILING_ANALYSIS=ON`. |
 
 ---
 
@@ -104,6 +106,9 @@ ctest --test-dir build-prof --output-on-failure
 #      gmon.<pid>      ← raw gmon binary (input for gprof)
 #    To also generate human-readable flat profiles and call graphs, add
 #    -DPROFILING_ANALYSIS=ON to the cmake configure step.  That produces:
+#      gmon.<pid>.gprof_output.txt  ← human-readable gprof flat profile + call graph
+#    To generate CDash measurements for performance tracking, also add
+#    -DENABLE_CDASH=ON. This creates an XML file for each test:
 #      gmon.<pid>.gprof_output.txt  ← human-readable gprof flat profile + call graph
 ls build-prof/profiling-results/solver_small/
 # gmon.12345
