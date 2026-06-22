@@ -1,5 +1,7 @@
 # ci-profile-tests
 
+![Status](https://github.com/AlexanderRichert-NOAA/ci-profile-tests/workflows/test/badge.svg)
+
 This repository provides a unified profiling framework for CMake/CTest projects on GitHub Actions and
 local workstations.  It supports four back-ends:
 
