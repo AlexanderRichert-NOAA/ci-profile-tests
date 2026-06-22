@@ -107,6 +107,13 @@ on:
         required: false
         default: ''
 
+      cdash:
+        description: >
+          Set to "true" to generate a CDash XML measurement file (currently gprof only).
+        type: string
+        required: false
+        default: 'false'
+
 # ---------------------------------------------------------------------------
 # Jobs
 # ---------------------------------------------------------------------------
@@ -140,3 +147,4 @@ jobs:
           hpctoolkit_version:       ${{ inputs.hpctoolkit_version }}
           vtune_version:            ${{ inputs.vtune_version }}
           scalasca_version:         ${{ inputs.scalasca_version }}
+          cdash:                    ${{ inputs.cdash }}
