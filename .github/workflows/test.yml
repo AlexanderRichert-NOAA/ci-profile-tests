@@ -1,13 +1,13 @@
 # =============================================================================
 # .github/workflows/ci.yml
 #
-# CI workflow for the ci-multiprofiler repository itself.
+# CI workflow for the ci-profile-tests repository itself.
 #
 # Builds and profiles the dummy application in test/ to verify that the
 # profiling framework (Profiling.cmake + action.yml) works end-to-end
 # for every supported back-end.
 # =============================================================================
-name: 'CI'
+name: 'CI testing'
 
 on:
   push:
