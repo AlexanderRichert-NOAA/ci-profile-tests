@@ -58,7 +58,7 @@ def main():
                          help='Report only the N hottest functions (0 = no limit)')
     args = parser.parse_args()
 
-    measurements = [(name, secs) for name, secs in parse_gprof(args.gprof_output) if secs > 0]
+    measurements = list(parse_gprof(args.gprof_output))
     measurements.sort(key=lambda item: item[1], reverse=True)
     if args.top_n > 0:
         measurements = measurements[:args.top_n]

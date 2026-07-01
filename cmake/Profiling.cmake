@@ -85,6 +85,28 @@ if(PROFILING_TOOL STREQUAL "gprof")
         string(APPEND CMAKE_SHARED_LINKER_FLAGS " -pg")
     endif()
 
+    # Override glibc's default 100 Hz gprof sampling rate with 1000 Hz (1 ms
+    # intervals) by linking a small constructor into every instrumented binary.
+    # The constructor runs after __gmon_start__ has already armed ITIMER_PROF,
+    # then immediately resets the interval to 1 ms so short-lived tests collect
+    # enough samples for non-zero self-time measurements.
+    set(_gprof_hz_src "${CMAKE_BINARY_DIR}/profiling_gprof_hz_override.c")
+    file(WRITE "${_gprof_hz_src}" [[
+/* Override gprof's default 100 Hz (10 ms) ITIMER_PROF interval with 1000 Hz. */
+#include <sys/time.h>
+__attribute__((constructor))
+static void _profiling_gprof_set_hz(void) {
+    struct itimerval itv;
+    itv.it_interval.tv_sec  = 0;
+    itv.it_interval.tv_usec = 1000; /* 1 ms = 1000 Hz */
+    itv.it_value = itv.it_interval;
+    setitimer(ITIMER_PROF, &itv, 0);
+}
+]])
+    add_library(_profiling_gprof_hz OBJECT "${_gprof_hz_src}")
+    # Apply to all executables defined after this point in the project.
+    link_libraries(_profiling_gprof_hz)
+
 elseif(PROFILING_TOOL STREQUAL "hpctoolkit" OR PROFILING_TOOL STREQUAL "vtune")
     # -rdynamic makes dynamic symbols visible to hpcrun/hpcstruct and VTune.
     if(NOT CMAKE_EXE_LINKER_FLAGS MATCHES "(^| )-rdynamic( |$)")
