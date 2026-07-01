@@ -35,9 +35,9 @@ jobs:
       - name: CDash (gprof profiling measurements)
         uses: NOAA-EMC/ci-cdash@addprofiling
         with:
+          package-name: 'ci-profile-tests'
           source-dir: 'test'
           profiling: 'true'
-          profiling-ref: ${{ github.sha }}
 
       - name: Verify gprof measurements were captured locally
         if: always()
