@@ -280,9 +280,13 @@ function(add_test)
     if(PROFILING_TOOL STREQUAL "gprof")
         # Register the test unchanged; set GMON_OUT_PREFIX so glibc writes
         # gmon.<pid> into the per-test directory instead of the working dir.
+        # Label the test gprof_instrumented so ci-cdash can exclude it from
+        # ctest_memcheck: valgrind does not emulate ITIMER_PROF, so SIGPROF
+        # fires and kills -pg-compiled binaries before they can write gmon.*.
         _add_test(${ARGV})
         set_tests_properties("${_PROF_AT_NAME}" PROPERTIES
-            ENVIRONMENT "GMON_OUT_PREFIX=${_prof_outdir}/gmon")
+            ENVIRONMENT "GMON_OUT_PREFIX=${_prof_outdir}/gmon"
+            LABELS "gprof_instrumented")
 
         if(PROFILING_ANALYSIS)
             # Resolve the executable: support both CMake target names and plain paths.
