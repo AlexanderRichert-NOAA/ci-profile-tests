@@ -48,8 +48,8 @@ jobs:
             echo "ERROR: no Test.xml produced under coderoot/build/Testing"
             exit 1
           fi
-          if ! grep -q 'self_seconds' "$test_xml"; then
-            echo "ERROR: no gprof self_seconds measurements found in $test_xml"
+          if ! grep -q 'self_sec_per_call' "$test_xml"; then
+            echo "ERROR: no gprof self_sec_per_call measurements found in $test_xml"
             exit 1
           fi
-          echo "OK: found gprof self_seconds measurements in $test_xml"
+          echo "OK: found gprof self_sec_per_call measurements in $test_xml"
