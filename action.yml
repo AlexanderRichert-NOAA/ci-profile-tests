@@ -68,6 +68,14 @@ inputs:
     required: false
     default: '14'
 
+  cmake_lists_file:
+    description: >
+      Path to a CMakeLists.txt file (relative to source_dir) into which the
+      PROFILING_INCLUDE_FILE guard snippet will be prepended automatically.
+      Set to an empty string to skip injection entirely.
+    required: false
+    default: 'tests/CMakeLists.txt'
+
   cache_tools:
     description: >
       Set to "true" to cache profiler installations with actions/cache so that
@@ -201,6 +209,23 @@ runs:
       shell: bash
       run: |
         echo "/opt/scalasca/bin" >> "$GITHUB_PATH"
+
+    - name: Inject PROFILING_INCLUDE_FILE guard into CMakeLists.txt
+      if: inputs.cmake_lists_file != ''
+      shell: bash
+      run: |
+        TARGET_FILE="${{ inputs.source_dir }}/${{ inputs.cmake_lists_file }}"
+        if [ ! -f "$TARGET_FILE" ]; then
+          echo "[profiler] WARNING: $TARGET_FILE not found; skipping PROFILING_INCLUDE_FILE injection."
+        elif grep -qF 'PROFILING_INCLUDE_FILE' "$TARGET_FILE"; then
+          echo "[profiler] PROFILING_INCLUDE_FILE guard already present in $TARGET_FILE; skipping injection."
+        else
+          printf 'if(DEFINED PROFILING_INCLUDE_FILE)\n  include("${PROFILING_INCLUDE_FILE}")\nendif()\n\n' \
+            > /tmp/_profiling_snippet.cmake
+          cat /tmp/_profiling_snippet.cmake "$TARGET_FILE" > /tmp/_cmake_inject_tmp
+          mv /tmp/_cmake_inject_tmp "$TARGET_FILE"
+          echo "[profiler] Injected PROFILING_INCLUDE_FILE guard into $TARGET_FILE."
+        fi
 
     - name: Configure CMake
       shell: bash
