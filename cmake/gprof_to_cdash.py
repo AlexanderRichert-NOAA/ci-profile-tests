@@ -17,7 +17,7 @@ HEADER_RE = re.compile(r'^\s*%\s+cumulative\s+self\s+self\s+total')
 
 
 def parse_gprof(gprof_file):
-    """Yields (function_name, self_seconds) pairs from a gprof flat profile."""
+    """Yields (function_name, self_s_per_call) pairs from a gprof flat profile."""
     in_flat_profile = False
     with open(gprof_file) as f:
         for line in f:
@@ -37,11 +37,16 @@ def parse_gprof(gprof_file):
             fields = line.split()
             if len(fields) < 4:
                 continue
+            # self ms/call (index 4) is only present when the function was
+            # called; default to 0.0 for functions with no recorded samples.
+            if len(fields) < 7:
+                yield fields[-1], 0.0
+                continue
             try:
-                self_seconds = float(fields[2])
+                self_sec_per_call = float(fields[4]) / 1000.0
             except ValueError:
                 continue
-            yield fields[-1], self_seconds
+            yield fields[-1], self_sec_per_call
 
 
 def xml_escape(text):
@@ -63,10 +68,10 @@ def main():
     if args.top_n > 0:
         measurements = measurements[:args.top_n]
 
-    for name, self_seconds in measurements:
+    for name, self_sec_per_call in measurements:
         sys.stdout.write(
-            f'<CTestMeasurement type="numeric/double" name="{xml_escape(name)}-self_seconds">'
-            f'{self_seconds}</CTestMeasurement>\n'
+            f'<CTestMeasurement type="numeric/double" name="{xml_escape(name)}-self_sec_per_call">'
+            f'{self_sec_per_call}</CTestMeasurement>\n'
         )
 
 
