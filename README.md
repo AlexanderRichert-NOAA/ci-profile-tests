@@ -18,19 +18,20 @@ local workstations.  It supports four back-ends:
 
 ```
 ci-profile-tests/
-├── action.yml                   # Composite GitHub Action
+├── action.yml                     # Composite GitHub Action
 ├── cmake/
-│   ├── gprof_to_cdash.py        # Converts gprof output to CDash measurements
-│   └── Profiling.cmake          # CMake module — include in your project
+│   ├── gprof_to_cdash.py          # Parses gprof output into CTestMeasurement tags
+│   └── Profiling.cmake            # CMake module — include in your project
 ├── test/
-│   ├── CMakeLists.txt           # Self-test project for the framework
+│   ├── CMakeLists.txt             # Self-test project for the framework
 │   ├── compute.c / compute.h
 │   ├── main.c
 │   └── sum.f90
 ├── .github/
 │   └── workflows/
-│       ├── ci.yml               # Framework's own CI self-tests
-│       └── profile-workflow.yml # Reusable GitHub Workflow
+│       ├── test.yml               # Framework's own CI self-tests
+│       ├── profile-workflow.yml   # Reusable GitHub Workflow
+│       └── cdash-integration.yml  # End-to-end test against NOAA-EMC/ci-cdash
 └── README.md
 ```
 
@@ -76,7 +77,28 @@ endif()
 | `PROFILING_TOOL` | `gprof` | Back-end: `vtune`, `gprof`, `hpctoolkit`, or `scalasca` |
 | `PROFILING_OUTPUT_DIR` | `<build>/profiling-results` | Root output directory |
 | `PROFILING_ANALYSIS` | `OFF` | Post-process raw data into a human-readable report (gprof / VTune hotspots / `hpcstruct` + `hpcprof` / `scalasca -examine`) |
-| `ENABLE_CDASH` | `OFF` | Generate custom measurements for CDash. Requires `PROFILING_ANALYSIS=ON`. |
+| `ENABLE_CDASH` | `OFF` | Generate CDash `<CTestMeasurement>` tags from gprof output. Requires `PROFILING_ANALYSIS=ON` and `PROFILING_TOOL=gprof`. |
+| `PROFILING_CDASH_TOP_N` | `0` | Max number of hottest functions reported per test when `ENABLE_CDASH=ON` (`0` = no limit) |
+
+---
+
+## CDash dashboard integration
+
+`ENABLE_CDASH` makes each test's gprof analysis step print `<CTestMeasurement>`
+tags (function name + self time in seconds) to its own stdout. This is plain
+CTest behavior: any `ctest_test()` run captures those tags into `Test.xml`,
+and submitting that file to CDash (`ctest_submit()`) attaches the measurements
+to that test's entry — no extra plumbing required. Running the project's own
+`ctest` locally with `-DENABLE_CDASH=ON` writes the tags into
+`Testing/<date>/Test.xml` even without a dashboard.
+
+For NCEPLIBS-style repos, [NOAA-EMC/ci-cdash](https://github.com/NOAA-EMC/ci-cdash)
+drives this whole pipeline (configure, build, MemCheck, this profiling step,
+and submission) with a single `profiling: true` input — see its README for
+the one CMakeLists.txt change required on the consuming project's side. This
+repository's own [.github/workflows/cdash-integration.yml](.github/workflows/cdash-integration.yml)
+is a working example: it runs `test/` through `ci-cdash` with profiling
+enabled and checks that measurements were produced.
 
 ---
 
@@ -103,9 +125,10 @@ ctest --test-dir build-prof --output-on-failure
 #    To also generate human-readable flat profiles and call graphs, add
 #    -DPROFILING_ANALYSIS=ON to the cmake configure step.  That produces:
 #      gmon.<pid>.gprof_output.txt  ← human-readable gprof flat profile + call graph
-#    To generate CDash measurements for performance tracking, also add
-#    -DENABLE_CDASH=ON. This creates an XML file for each test:
-#      gmon.<pid>.gprof_output.txt  ← human-readable gprof flat profile + call graph
+#    To also generate CDash measurements from that report, add -DENABLE_CDASH=ON.
+#    The measurements are printed as <CTestMeasurement> tags on the
+#    <test_name>_gprof_analysis test's own output (see `ctest -VV`), and land
+#    in build-prof/Testing/<date>/Test.xml.
 ls build-prof/profiling-results/solver_small/
 # gmon.12345
 # (with -DPROFILING_ANALYSIS=ON: gmon.12345.gprof_output.txt also appears)

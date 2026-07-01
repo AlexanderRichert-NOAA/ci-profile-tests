@@ -87,13 +87,6 @@ inputs:
     description: Scalasca version to install via Spack.
     required: false
 
-  cdash:
-    description: >
-      Set to "true" to generate a CDash XML measurement file from the
-      profiling output (currently gprof only).
-    required: false
-    default: 'false'
-
 runs:
   using: 'composite'
   steps:
@@ -242,20 +235,6 @@ runs:
           --test-dir "${{ inputs.build_dir }}" \
           --output-on-failure \
           "${CTEST_OPTS[@]}"
-
-    - name: Generate CDash report from gprof
-      if: inputs.profiling_tool == 'gprof' && inputs.cdash == 'true'
-      shell: bash
-      run: |
-        echo "Generating CDash XML from gprof output..."
-        PROFILING_RESULTS_DIR="${{ inputs.build_dir }}/profiling-results"
-        if [ -d "$PROFILING_RESULTS_DIR" ]; then
-          find "$PROFILING_RESULTS_DIR" -name '*.gprof_output.txt' -print0 |
-            xargs -0 -I {} python3 "${{ github.action_path }}/cmake/gprof_to_cdash.py" {} \
-              $(basename $(dirname {})) "${{ inputs.build_dir }}/gprof-cdash.xml"
-        else
-          echo "Warning: Profiling results directory not found. Skipping CDash report generation."
-        fi
 
     - name: Upload profiling artifacts
       if: always()   # upload even if tests fail so partial data is preserved

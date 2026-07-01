@@ -32,6 +32,9 @@ option(PROFILING_ANALYSIS
 option(ENABLE_CDASH
     "Generate CDash custom measurements for tests" OFF)
 
+set(PROFILING_CDASH_TOP_N "0" CACHE STRING
+    "Number of hottest gprof functions to report as CDash measurements per test (0 = no limit)")
+
 # -----------------------------------------------------------------------------
 # Early exit when profiling is disabled
 # -----------------------------------------------------------------------------
@@ -106,11 +109,21 @@ if(PROFILING_TOOL STREQUAL "gprof" AND PROFILING_ANALYSIS)
     set(_gprof_cdash_logic "")
     if(ENABLE_CDASH)
         set(_gprof_cdash_logic [=[
-        # If CDash integration is enabled, parse the gprof output and generate
-        # an XML file with <CTestMeasurement> tags.
-        set(_cdash_xml "${OUTDIR}/${_gprof_gmon_name}.cdash.xml")
-        execute_process(COMMAND "${Python3_EXECUTABLE}" "${PROFILING_OUTPUT_DIR}/gprof_to_cdash.py" "${_gprof_report}" "${TEST_NAME}" "${_cdash_xml}")
-        message("<CTestMeasurementFile name=\"${_gprof_gmon_name}.cdash.xml\" type=\"text/xml\">${_cdash_xml}</CTestMeasurementFile>")
+        # Parse the gprof output and re-emit its <CTestMeasurement> tags on
+        # this test's own stdout, where ctest_test()/ctest_submit() pick them
+        # up and attach them to this test's entry on CDash.
+        execute_process(
+            COMMAND "${Python3_EXECUTABLE}" "${PROFILING_OUTPUT_DIR}/gprof_to_cdash.py"
+                "${_gprof_report}" "--top-n" "${PROFILING_CDASH_TOP_N}"
+            OUTPUT_VARIABLE _gprof_cdash_measurements
+            ERROR_VARIABLE  _gprof_cdash_err
+            RESULT_VARIABLE _gprof_cdash_rc
+        )
+        if(_gprof_cdash_rc)
+            message(WARNING "gprof_to_cdash.py exited with code ${_gprof_cdash_rc}: ${_gprof_cdash_err}")
+        else()
+            message("${_gprof_cdash_measurements}")
+        endif()
 ]=])
     endif()
 
@@ -119,6 +132,7 @@ if(PROFILING_TOOL STREQUAL "gprof" AND PROFILING_ANALYSIS)
 # Parameters (via -D): EXE  absolute path to the instrumented executable
 #                      OUTDIR  per-test profiling output directory
 file(GLOB _gprof_gmon_files LIST_DIRECTORIES false \"\${OUTDIR}/gmon.*\")
+list(FILTER _gprof_gmon_files EXCLUDE REGEX \"\\\\.gprof_output\\\\.txt\$\")
 if(NOT _gprof_gmon_files)
     message(FATAL_ERROR \"gprof_analysis: no gmon.* files found in \${OUTDIR}\")
     return()
@@ -285,12 +299,15 @@ function(add_test)
                     "-DOUTDIR=${_prof_outdir}"
                     "-DPROFILING_OUTPUT_DIR=${PROFILING_OUTPUT_DIR}"
                     "-DPython3_EXECUTABLE=${Python3_EXECUTABLE}"
-                    "-DTEST_NAME=${_PROF_AT_NAME}"
+                    "-DPROFILING_CDASH_TOP_N=${PROFILING_CDASH_TOP_N}"
                     -P "${PROFILING_OUTPUT_DIR}/run_gprof_analysis.cmake")
             # DEPENDS guarantees the analysis test is scheduled after the main
-            # test has run and written its gmon.* files.
+            # test has run and written its gmon.* files. LABELS lets callers
+            # (e.g. ci-cdash) exclude these post-processing tests from
+            # MemCheck and run them as ordinary tests instead.
             set_tests_properties("${_PROF_AT_NAME}_gprof_analysis" PROPERTIES
-                DEPENDS "${_PROF_AT_NAME}")
+                DEPENDS "${_PROF_AT_NAME}"
+                LABELS "profiling_analysis")
 
             unset(_prof_exe)
             unset(_prof_exe_arg)
@@ -324,7 +341,8 @@ function(add_test)
             # DEPENDS guarantees the analysis test runs after hpcrun has written
             # its measurements/ directory.
             set_tests_properties("${_PROF_AT_NAME}_hpctoolkit_analysis" PROPERTIES
-                DEPENDS "${_PROF_AT_NAME}")
+                DEPENDS "${_PROF_AT_NAME}"
+                LABELS "profiling_analysis")
 
             unset(_prof_exe)
             unset(_prof_exe_arg)
@@ -350,7 +368,8 @@ function(add_test)
                     "-DOUTDIR=${_prof_outdir}"
                     -P "${PROFILING_OUTPUT_DIR}/run_scalasca_analysis.cmake")
             set_tests_properties("${_PROF_AT_NAME}_scalasca_analysis" PROPERTIES
-                DEPENDS "${_PROF_AT_NAME}")
+                DEPENDS "${_PROF_AT_NAME}"
+                LABELS "profiling_analysis")
         endif()
 
     elseif(PROFILING_TOOL STREQUAL "vtune")
@@ -374,7 +393,8 @@ function(add_test)
                     "-DRESULTDIR=${_prof_outdir}/vtune-result"
                     -P "${PROFILING_OUTPUT_DIR}/run_vtune_analysis.cmake")
             set_tests_properties("${_PROF_AT_NAME}_vtune_analysis" PROPERTIES
-                DEPENDS "${_PROF_AT_NAME}")
+                DEPENDS "${_PROF_AT_NAME}"
+                LABELS "profiling_analysis")
         endif()
 
     endif()

@@ -1,0 +1,52 @@
+# =============================================================================
+# .github/workflows/cdash-integration.yml
+#
+# End-to-end test of the ci-cdash + ci-profile-tests integration.
+#
+# Runs the test/ CMake project through NOAA-EMC/ci-cdash with profiling
+# enabled, so gprof-derived custom measurements are attached to each test and
+# submitted to CDash alongside the usual MemCheck/Coverage report. This
+# exercises the exact same path a downstream NCEPLIBS-style repo would use to
+# get profiling measurements on its own CDash dashboard.
+#
+# Requires a CDASH_TOKEN repository secret and a "ci-profile-tests" project
+# on the CDash server configured in CTestConfig.cmake (see ci-cdash/README.md
+# for setup steps).
+# =============================================================================
+name: 'CDash integration'
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  cdash:
+    runs-on: ubuntu-latest
+    env:
+      FC: gfortran
+      CC: gcc
+      CDASH_TOKEN: ${{ secrets.CDASH_TOKEN }}
+
+    steps:
+      - name: CDash (gprof profiling measurements)
+        uses: NOAA-EMC/ci-cdash@develop
+        with:
+          source-dir: 'test'
+          profiling: 'true'
+          profiling-ref: ${{ github.sha }}
+
+      - name: Verify gprof measurements were captured locally
+        if: always()
+        shell: bash
+        run: |
+          test_xml=$(find coderoot/build/Testing -maxdepth 2 -name 'Test.xml' | head -n1)
+          if [ -z "$test_xml" ]; then
+            echo "ERROR: no Test.xml produced under coderoot/build/Testing"
+            exit 1
+          fi
+          if ! grep -q 'self_seconds' "$test_xml"; then
+            echo "ERROR: no gprof self_seconds measurements found in $test_xml"
+            exit 1
+          fi
+          echo "OK: found gprof self_seconds measurements in $test_xml"

@@ -6,19 +6,25 @@ enable_testing()
 # ---------------------------------------------------------------------------
 # Profiling framework
 #
-# CI_MODE (ON): include Profiling.cmake directly from the sibling
-# cmake/ directory.  Used by the repository's own CI workflow, which
-# checks out the whole tree.
+# PROFILING_INCLUDE_FILE (set): include the given Profiling.cmake directly.
+# This is the contract used by ci-cdash, which clones ci-profile-tests itself
+# and passes the path to its Profiling.cmake -- see ci-cdash/README.md.
 #
-# CI_MODE (OFF, default): pull ci-multiprofiler via FetchContent,
-# as any external project would.  Set GIT_REPOSITORY to your fork/mirror
-# and GIT_TAG to a specific tag or SHA for reproducibility.
+# CI_MODE (ON, no PROFILING_INCLUDE_FILE): include Profiling.cmake directly
+# from the sibling cmake/ directory. Used by this repository's own CI
+# workflow, which checks out the whole tree.
+#
+# Neither set (default): pull ci-profile-tests via FetchContent, as any
+# external project would. Set GIT_REPOSITORY to your fork/mirror and GIT_TAG
+# to a specific tag or SHA for reproducibility.
 # ---------------------------------------------------------------------------
 option(CI_MODE
     "Include Profiling.cmake from the local source tree (for repo-internal CI)"
     OFF)
 
-if(CI_MODE)
+if(DEFINED PROFILING_INCLUDE_FILE)
+    include("${PROFILING_INCLUDE_FILE}")
+elseif(CI_MODE)
     include("${CMAKE_CURRENT_LIST_DIR}/../cmake/Profiling.cmake")
 else()
     include(FetchContent)
@@ -45,6 +51,6 @@ add_executable(sum_fortran sum.f90)
 # directory and are never clobbered across runs.
 # ---------------------------------------------------------------------------
 add_test(NAME sort_small    COMMAND dummy_app   1000)
-add_test(NAME sort_large    COMMAND dummy_app   5000)
+add_test(NAME sort_large    COMMAND dummy_app   20000)
 add_test(NAME sum_fortran_small COMMAND sum_fortran 1000)
 add_test(NAME sum_fortran_large COMMAND sum_fortran 5000)
