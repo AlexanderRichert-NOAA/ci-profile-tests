@@ -29,8 +29,11 @@ jobs:
       CDASH_TOKEN: ${{ secrets.CDASH_TOKEN }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@0c366fd6a839edf440554fa01a7085ccba70ac98
+
       - name: CDash (gprof profiling measurements)
-        uses: NOAA-EMC/ci-cdash@develop
+        uses: NOAA-EMC/ci-cdash@addprofiling
         with:
           source-dir: 'test'
           profiling: 'true'
